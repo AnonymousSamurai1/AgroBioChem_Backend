@@ -69,7 +69,7 @@ exports.createProduct = async (req, res) => {
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: "Image file is required"
+        message: "Image file is required",
       });
     }
     const result = await cloudinary.uploader.upload(req.file.path);
@@ -100,37 +100,30 @@ exports.createProduct = async (req, res) => {
 exports.updateProduct = async (req, res) => {
   try {
     let product = await Product.findById(req.params.id);
-    if (!product) {
-      return res.status(404).json({ success: false, msg: "Product not found" });
-    }
-    let imagePath = product.image;
-    if (req.file) {
-      if (product.image) {
-        const oldImagePath = path.join(
-          __dirname,
-          "..",
-          product.image.replace(`${req.protocol}://${req.get("host")}`, ""),
-        );
-        fs.unlink(oldImagePath, (err) => {
-          if (err) console.error("Error deleting old image:", err);
-        });
-      }
-      const fileName = req.file.filename;
-      const basePath = `${req.protocol}://${req.get("host")}/public/uploads/`;
-      imagePath = `${basePath}${fileName}`;
-    }
-
-    product = await Product.findByIdAndUpdate(
-      req.params.id,
-      { ...req.body, image: imagePath },
-      { new: true, runValidators: true },
-    );
+    await cloudinary.uploader.destroy(product.cloudinary_id);
+    const result = await cloudinary.uploader.upload(req.file.path);
+    const data = {
+      name: req.body.name || product.name,
+      description: req.body.description || product.description,
+      category: req.body.category || product.category,
+      categoryType: req.body.categoryType || product.categoryType,
+      image: result.secure_url || product.image,
+      ingredient: req.body.ingredient || product.ingredient,
+      cloudinary_id: result.public_id || product.product.cloudinary_id,
+    };
+    product = await Product.findByIdAndUpdate(req.params.id, data, {
+      new: true,
+      runValidators: true,
+    });
 
     res.status(200).json({
       success: true,
       msg: "Product updated",
       product,
     });
+    if (!product) {
+      return res.status(404).json({ success: false, msg: "Product not found" });
+    }
   } catch (error) {
     res
       .status(500)

@@ -1,31 +1,31 @@
 const mongoose = require('mongoose');
 
-const productSchema = mongoose.Schema({
+const productSchema = new mongoose.Schema({
   name: {
     type: String,
-    require: true,
+    required: true,
   },
   description: {
     type: String,
-    require: true,
+    required: true,
   },
   category: {
     type: String,
-    require: true,
+    required: true,
   },
   categoryType: {
     type: String,
   },
   image: {
     type: String,
-    require: true,
-  },
-  images: {
-    type: String,
+    required: true,
   },
   ingredient: {
     type: String,
-    require: true,
+    required: true,
+  },
+  cloudinary_id: {
+    type: String,
   },
   dateCreated: {
     type: Date,
@@ -41,4 +41,4 @@ productSchema.set('toJSON', {
   virtuals: true,
 });
 
-module.exports = mongoose.model('Products', productSchema);
+module.exports = mongoose.model('Product', productSchema);

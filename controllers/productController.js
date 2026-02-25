@@ -1,33 +1,6 @@
-const Product = require('../models/productModel');
-const multer = require('multer');
-const fs = require('fs');
-const path = require('path');
-
-const FILE_TYPE_MAP = {
-  'image/png': 'png',
-  'image/jpeg': 'jpeg',
-  'image/jpg': 'jpg',
-};
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    const isValid = FILE_TYPE_MAP[file.mimetype];
-    let uploadError = new Error('Invalid image type');
-
-    if (isValid) {
-      uploadError = null;
-    }
-    cb(uploadError, 'public/uploads');
-  },
-
-  filename: function (req, file, cb) {
-    const fileName = file.originalname.replace(' ', '-');
-    const extension = FILE_TYPE_MAP[file.mimetype];
-    cb(null, `${fileName}-${Date.now()}.${extension}`);
-  },
-});
-
-const uploadOptions = multer({ storage: storage });
+const Product = require("../models/productModel");
+const cloudinary = require("../utils/cloudinary");
+const upload = require("../utils/multer");
 
 exports.getAllProducts = async (req, res) => {
   try {
@@ -35,8 +8,8 @@ exports.getAllProducts = async (req, res) => {
 
     if (req.query.search) {
       query.$or = [
-        { name: { $regex: req.query.search, $options: 'i' } },
-        { description: { $regex: req.query.search, $options: 'i' } },
+        { name: { $regex: req.query.search, $options: "i" } },
+        { description: { $regex: req.query.search, $options: "i" } },
       ];
     }
 
@@ -49,10 +22,10 @@ exports.getAllProducts = async (req, res) => {
 
     let sort = {};
     if (req.query.sort) {
-      const sortFields = req.query.sort.split(',');
+      const sortFields = req.query.sort.split(",");
 
       sortFields.forEach((field) => {
-        if (field.startsWith('-')) {
+        if (field.startsWith("-")) {
           sort[field.substring(1)] = -1;
         } else {
           sort[field] = 1;
@@ -91,27 +64,38 @@ exports.getProduct = async (req, res, next) => {
   }
 };
 
-exports.createProduct =
-  (uploadOptions.single('image'),
-  async (req, res) => {
-    try {
-      const { name, description, category, categoryType, ingredient } =
-        req.body;
-      const fileName = req.file.filename;
-      const basePath = `${req.protocol}://${req.get('host')}/public/uploads/`;
-      const product = await Product.create({
-        name,
-        description,
-        category,
-        categoryType,
-        image: `${basePath}${fileName}`,
-        ingredient,
+exports.createProduct = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Image file is required"
       });
-      res.status(201).json({ success: true, msg: 'Product created', product });
-    } catch (error) {
-      res.status(400).json({ success: false, message: error.message });
     }
-  });
+    const result = await cloudinary.uploader.upload(req.file.path);
+
+    const product = await Product.create({
+      name: req.body.name,
+      description: req.body.description,
+      category: req.body.category,
+      categoryType: req.body.categoryType,
+      image: result.secure_url,
+      ingredient: req.body.ingredient,
+      cloudinary_id: result.public_id,
+    });
+
+    res.status(201).json({
+      success: true,
+      msg: "Product created",
+      product,
+    });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      message: error.message,
+    });
+  }
+};
 
 exports.updateProduct = async (req, res) => {
   try {
@@ -122,7 +106,11 @@ exports.updateProduct = async (req, res) => {
     let imagePath = product.image;
     if (req.file) {
       if (product.image) {
-        const oldImagePath = path.join(__dirname, "..", product.image.replace(`${req.protocol}://${req.get("host")}`, ""));
+        const oldImagePath = path.join(
+          __dirname,
+          "..",
+          product.image.replace(`${req.protocol}://${req.get("host")}`, ""),
+        );
         fs.unlink(oldImagePath, (err) => {
           if (err) console.error("Error deleting old image:", err);
         });
@@ -132,8 +120,10 @@ exports.updateProduct = async (req, res) => {
       imagePath = `${basePath}${fileName}`;
     }
 
-    product = await Product.findByIdAndUpdate(req.params.id, {...req.body, image: imagePath,},
-      { new: true, runValidators: true }
+    product = await Product.findByIdAndUpdate(
+      req.params.id,
+      { ...req.body, image: imagePath },
+      { new: true, runValidators: true },
     );
 
     res.status(200).json({
@@ -142,75 +132,27 @@ exports.updateProduct = async (req, res) => {
       product,
     });
   } catch (error) {
-    res.status(500).json({ success: false, msg: "Error updating Product", error });
+    res
+      .status(500)
+      .json({ success: false, msg: "Error updating Product", error });
   }
 };
 
 exports.deleteProduct = async (req, res) => {
   try {
-    const product = await Product.findByIdAndDelete(req.params.id);
-    if (!product) {
-      return res.status(404).json({ success: false, msg: 'Product not found' });
-    }
-    if (product.image) {
-      const imagePath = path.join(
-        __dirname,
-        '..',
-        product.image.replace(`${req.protocol}://${req.get('host')}`, '')
-      );
-
-      fs.unlink(imagePath, (err) => {
-        if (err) {
-          console.error('Error deleting image:', err);
-        } else {
-          console.log('Image deleted:', imagePath);
-        }
-      });
-    }
+    let product = await Product.findByIdAndDelete(req.params.id);
+    await cloudinary.uploader.destroy(product.cloudinary_id);
 
     res.status(200).json({
       success: true,
       msg: `Product with id: ${req.params.id} deleted`,
     });
+    if (!product) {
+      return res.status(404).json({ success: false, msg: "Product not found" });
+    }
   } catch (error) {
     res
       .status(400)
-      .json({ success: false, msg: 'Error deleting Product', error });
+      .json({ success: false, msg: "Error deleting Product", error });
   }
 };
-
-exports.uploadProducts =
-  (uploadOptions.array('images', 10),
-  async (req, res) => {
-    try {
-      const files = req.files;
-      let imagePaths = [];
-      const basePath = `${req.protocol}://${req.get('host')}/public/upload/`;
-
-      if (files) {
-        files.map((file) => {
-          imagePaths.push(`${basePath}${file.fileName}`);
-        });
-      }
-      const product = await Product.findByIdAndUpdate(
-        req.params.id,
-        { images: imagesPaths },
-        {
-          new: true,
-        }
-      );
-      if (!product) {
-        return res
-          .status(404)
-          .json({ success: false, msg: 'Product not found' });
-      }
-      res.status(200).json({ success: true, msg: 'Product updated', product });
-    } catch (error) {
-      res
-        .status(500)
-        .json({ success: false, msg: 'Error updating Product', error });
-    }
-  });
-
-exports.uploadSingle = uploadOptions.single('image');
-exports.uploadMultiple = uploadOptions.array('images', 10);

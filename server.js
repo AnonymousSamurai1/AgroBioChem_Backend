@@ -1,16 +1,12 @@
+require('dotenv').config();
+
 const express = require('express');
 const path = require('path');
-const dotenv = require('dotenv');
 const morgan = require('morgan');
 const cors = require('cors');
 const connectDB = require('./db');
 
-dotenv.config(); 
-
 const app = express();
-
-// Connect DB
-connectDB();
 
 // Middleware
 app.use(express.json());
@@ -28,5 +24,7 @@ app.use('/agrobiochem/api/keys', require('./routes/keyRoute'));
 app.use('/agrobiochem/api/products', require('./routes/productRoute'));
 app.use('/agrobiochem/api/questions', require('./routes/questionRoute'));
 
-
-module.exports = app;
+module.exports = async (req, res) => {
+  await connectDB();
+  return app(req, res);
+};
